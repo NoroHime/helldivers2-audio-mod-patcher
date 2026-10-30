@@ -1,5 +1,6 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { fixPackage, extractFromZip, looksLikeZip, looksLikePatch, looksLikeBank, type FixReport } from './lib/fix';
+import { putBank, getBank, clearBank } from './lib/storage';
 
 type Out = { name: string; bytes: Uint8Array };
 
@@ -27,6 +28,7 @@ export default function App() {
   const [outputs, setOutputs] = useState<Out[]>([]);
   const [busy, setBusy] = useState(false);
   const [align, setAlign] = useState(16);
+  const [cached, setCached] = useState<{ name: string; kb: number } | null>(null);
 
   const onPatch = useCallback(async (f: File) => {
     const bytes = await readFile(f);
@@ -50,7 +52,9 @@ export default function App() {
     const bytes = await readFile(f);
     if (!looksLikeBank(bytes)) { setReport({ logs: [{ level: 'err', text: '这个文件里没有 BKHD，不像是 bank' }], outputs: [] }); return; }
     setBankFile({ name: f.name, bytes });
-    setReport({ logs: [{ level: 'ok', text: '基线 bank 已载入：' + f.name + '（' + Math.round(bytes.length / 1024) + ' KB）' }], outputs: [] });
+    setCached({ name: f.name, kb: Math.round(bytes.length / 1024) });
+    void putBank(f.name, bytes);
+    setReport({ logs: [{ level: 'ok', text: '基线 bank 已载入并缓存：' + f.name + '（' + Math.round(bytes.length / 1024) + ' KB）' }], outputs: [] });
   }, []);
 
   const run = useCallback(() => {
@@ -64,6 +68,21 @@ export default function App() {
     }, 30);
   }, [patchFile, bankFile, manifest, align]);
 
+  useEffect(function () {
+    void (async function () {
+      const got = await getBank();
+      if (!got) return;
+      setBankFile({ name: got.name, bytes: got.bytes });
+      setCached({ name: got.name, kb: Math.round(got.bytes.length / 1024) });
+    })();
+  }, []);
+
+  const forget = useCallback(async function () {
+    await clearBank();
+    setCached(null);
+    setBankFile(null);
+  }, []);
+
   const logs = useMemo(function () { return report ? report.logs : []; }, [report]);
 
   return (
@@ -71,6 +90,7 @@ export default function App() {
       <header>
         <h1>HD2 音频 Patch 修复器</h1>
         <p className="sub">把过期的音频 mod 重建成当前 build 可用。文件不会上传，全部在本机浏览器内处理。</p>
+        <p className="tag">目标 build：26088801 ｜ 基线 bank 只需导入一次（存本机 IndexedDB）</p>
       </header>
 
       <section className="grid">
@@ -83,7 +103,7 @@ export default function App() {
         <label className="drop">
           <span>2. 拖入当前 build 的原版 bank</span>
           <input type="file" onChange={function (e) { const f = e.target.files && e.target.files[0]; if (f) onBank(f); }} />
-          <em>{bankFile ? bankFile.name + ' · ' + Math.round(bankFile.bytes.length / 1024) + ' KB' : '未选择（从游戏 data 目录取，或下载对应 build 的基线包）'}</em>
+          <em>{bankFile ? bankFile.name + ' · ' + Math.round(bankFile.bytes.length / 1024) + ' KB' + (cached ? ' · 已缓存，下次自动载入' : '') : '未选择（从游戏 data 目录取，或下载对应 build 的基线包）'}</em>
         </label>
       </section>
 
@@ -94,6 +114,7 @@ export default function App() {
           <option value={1}>无对齐</option>
         </select></label>
         <button onClick={run} disabled={!patchFile || !bankFile || busy}>{busy ? '处理中…' : '开始修复'}</button>
+        {cached ? <button className="ghost" onClick={forget}>清除缓存的基线 bank</button> : null}
         {outputs.map(function (o) {
           return <button key={o.name} className="dl" onClick={function () { download(o.name, o.bytes); }}>下载 {o.name}</button>;
         })}

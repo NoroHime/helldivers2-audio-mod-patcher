@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/lib/bank.ts","./src/lib/bankbuild.ts","./src/lib/fix.ts","./src/lib/patch.ts","./src/lib/storage.ts"],"version":"5.9.3"}

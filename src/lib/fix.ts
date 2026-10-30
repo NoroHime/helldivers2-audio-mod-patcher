@@ -62,7 +62,7 @@ export function fixPackage(patchBytes: Uint8Array, bankBytes: Uint8Array, patchN
     for (let i = 0; i < patch.entries.length; i++) {
       if (looksLikeBank(patch.entries[i].data) && patch.entries[i].data.length > 100000) { bankEntry = i; break; }
     }
-    if (bankEntry < 0) throw new Error('this patch carries no Wwise bank (only streams or text) - nothing to rebuild');
+    if (bankEntry < 0) throw new Error('这个 patch 里没有 Wwise bank（可能只改 .stream 流式音频或文本），本工具修不了这种包');
     const modRaw = patch.entries[bankEntry].data;
     const modBank = parseBank(modRaw);
     textLog(report, 'ok', 'mod bank: ' + describeBank(modBank) + ' / ' + modBank.media.length + ' media');
@@ -78,6 +78,7 @@ export function fixPackage(patchBytes: Uint8Array, bankBytes: Uint8Array, patchN
     }
     textLog(report, 'ok', 'media matched: ' + replace.size + ' / skipped (not in baseline): ' + skipped.length);
 
+    if (replace.size === 0) throw new Error('这个 patch 的媒体 id 与基线 bank 一个都对不上 —— 要么基线 bank 不是同一个 build，要么这不是音频媒体包');
     const rebuilt = rebuildBank(baseline, replace, align);
     report.mediaReplaced = rebuilt.replaced.length;
     report.mediaMissing = rebuilt.missing.length;

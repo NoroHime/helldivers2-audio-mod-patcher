@@ -22,3 +22,5 @@ button.dl { background:#8fb4ff; }
 .log li.err { color:#f08080; }
 .dim { color:#7f8776; font-size:12px; }
 footer { margin-top:22px; color:#7f8776; font-size:12px; line-height:1.6; }
+button.ghost { background:#2a2f24; color:#c8d0bd; font-weight:500; }
+.tag { color:#8fa06a; font-size:12px; margin:-14px 0 20px; }
