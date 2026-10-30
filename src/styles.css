@@ -24,3 +24,8 @@ button.dl { background:#8fb4ff; }
 footer { margin-top:22px; color:#7f8776; font-size:12px; line-height:1.6; }
 button.ghost { background:#2a2f24; color:#c8d0bd; font-weight:500; }
 .tag { color:#8fa06a; font-size:12px; margin:-14px 0 20px; }
+
+.hint { display:block; margin-top:10px; color:#8c9482; font-size:12px; line-height:1.6; }
+.hint button { margin:8px 0; padding:6px 10px; font-size:12px; }
+.hint2 { display:block; color:#6f7766; font-size:11px; }
+.err { color:#f08080; }

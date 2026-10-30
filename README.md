@@ -26,6 +26,18 @@
 3. 拖入原版 bank。
 4. 点「开始修复」，下载产出的 zip，装进 mod 管理器。
 
+## 基线 bank 从哪来
+
+修复必须有一份**当前 build 的原版 Wwise 音效库**（约 4.4 MB）。它不是散落在 `data/` 里的独立文件，而是封在游戏的 `.dl_bin` 容器内。三条获取途径，按省事排序：
+
+| # | 途径 | 说明 |
+|---:|---|---|
+| 1 | **页面上的「自动下载基线 bank」按钮** | 从本仓库 Release 拉 `bank-26088801.bin`，带 SHA-256 校验，存到本机 IndexedDB（只下一次） |
+| 2 | **拖入任意一个已适配当前 build 的音频 mod**（zip 或 `.patch_0`） | 音频 mod 的 patch 里**本来就装着完整 bank**，本工具会自动从中提取。⚠️ 代价：那个 mod 的音频也会成为基线，结果里会带着它 |
+| 3 | **用工具从游戏目录导出** | 用 [hd2-audio-modder](https://github.com/RaidingForPants/hd2-audio-modder) 打开 `<Steam>\steamapps\common\Helldivers 2\data`，找到音效 bank 导出 |
+
+拿到后拖进第二个框即可，**只需一次**（之后浏览器会自动记住）。
+
 ## 它做了什么 / 不做什么
 
 | 做 | 不做 |

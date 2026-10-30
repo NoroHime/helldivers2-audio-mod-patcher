@@ -111,6 +111,14 @@ export function fixPackage(patchBytes: Uint8Array, bankBytes: Uint8Array, patchN
   }
 }
 
+export function extractBankBytes(patchBytes: Uint8Array): Uint8Array | null {
+  const p = parsePatch(patchBytes);
+  for (const e of p.entries) {
+    if (e.data.length > 100000 && looksLikeBank(e.data)) return e.data;
+  }
+  return null;
+}
+
 export function extractFromZip(bytes: Uint8Array): { patch?: { name: string; bytes: Uint8Array }; manifest?: Uint8Array; error?: string } {
   try {
     const files = unzipSync(bytes);

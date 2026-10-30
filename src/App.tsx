@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { fixPackage, extractFromZip, looksLikeZip, looksLikePatch, looksLikeBank, type FixReport } from './lib/fix';
+import { fixPackage, extractFromZip, extractBankBytes, looksLikeZip, looksLikePatch, looksLikeBank, type FixReport } from './lib/fix';
 import { putBank, getBank, clearBank } from './lib/storage';
+import { BASELINE, fetchBaseline } from './lib/baseline';
 
 type Out = { name: string; bytes: Uint8Array };
 
@@ -29,6 +30,8 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [align, setAlign] = useState(16);
   const [cached, setCached] = useState<{ name: string; kb: number } | null>(null);
+  const [fetching, setFetching] = useState(0);
+  const [fetchErr, setFetchErr] = useState('');
 
   const onPatch = useCallback(async (f: File) => {
     const bytes = await readFile(f);
@@ -49,12 +52,29 @@ export default function App() {
   }, []);
 
   const onBank = useCallback(async (f: File) => {
-    const bytes = await readFile(f);
-    if (!looksLikeBank(bytes)) { setReport({ logs: [{ level: 'err', text: '这个文件里没有 BKHD，不像是 bank' }], outputs: [] }); return; }
+    let bytes = await readFile(f);
+    let fromPkg = '';
+    if (!looksLikeBank(bytes)) {
+      // accept a known-good audio mod (zip or patch): its patch carries a full current-build bank
+      try {
+        let patchBytes: Uint8Array | null = null;
+        if (looksLikeZip(bytes)) {
+          const got = extractFromZip(bytes);
+          if (got.patch) patchBytes = got.patch.bytes;
+        } else if (looksLikePatch(bytes)) patchBytes = bytes;
+        if (patchBytes) {
+          const bank = extractBankBytes(patchBytes);
+          if (bank) { bytes = bank; fromPkg = '（从 ' + f.name + ' 里的 bank 条目提取）'; }
+        }
+      } catch (e) { /* fall through to the error below */ }
+    }
+    if (!looksLikeBank(bytes)) { setReport({ logs: [{ level: 'err', text: '这个文件里没有 BKHD：既不是 bank，也不是含 bank 的音频 mod' }], outputs: [] }); return; }
     setBankFile({ name: f.name, bytes });
     setCached({ name: f.name, kb: Math.round(bytes.length / 1024) });
     void putBank(f.name, bytes);
-    setReport({ logs: [{ level: 'ok', text: '基线 bank 已载入并缓存：' + f.name + '（' + Math.round(bytes.length / 1024) + ' KB）' }], outputs: [] });
+    const logs: any[] = [{ level: 'ok', text: '基线 bank 已载入并缓存：' + Math.round(bytes.length / 1024) + ' KB ' + fromPkg }];
+    if (fromPkg) logs.push({ level: 'warn', text: '注意：这个基线来自另一个 mod，它的音频也会一并带进结果。要纯净基线请用原版 bank。' });
+    setReport({ logs, outputs: [] });
   }, []);
 
   const run = useCallback(() => {
@@ -75,6 +95,24 @@ export default function App() {
       setBankFile({ name: got.name, bytes: got.bytes });
       setCached({ name: got.name, kb: Math.round(got.bytes.length / 1024) });
     })();
+  }, []);
+
+  const autoFetch = useCallback(async function () {
+    setFetchErr('');
+    setFetching(1);
+    try {
+      const got = await fetchBaseline(function (p) {
+        setFetching(p.total ? Math.round((p.loaded / p.total) * 100) : 1);
+      });
+      setBankFile({ name: 'bank-' + BASELINE.build + '.bin', bytes: got.bytes });
+      setCached({ name: 'bank-' + BASELINE.build + '.bin', kb: Math.round(got.bytes.length / 1024) });
+      await putBank('bank-' + BASELINE.build + '.bin', got.bytes);
+      setReport({ logs: [{ level: 'ok', text: '已自动下载基线 bank（' + Math.round(got.bytes.length / 1024) + ' KB，sha256 ' + got.sha.slice(0, 12) + '）' }], outputs: [] });
+    } catch (e) {
+      setFetchErr(String((e as Error).message || e));
+    } finally {
+      setFetching(0);
+    }
   }, []);
 
   const forget = useCallback(async function () {
@@ -101,9 +139,23 @@ export default function App() {
         </label>
 
         <label className="drop">
-          <span>2. 拖入当前 build 的原版 bank</span>
+          <span>2. 基线 bank（当前 build 的原版音效库）—— 支持两种来源</span>
           <input type="file" onChange={function (e) { const f = e.target.files && e.target.files[0]; if (f) onBank(f); }} />
-          <em>{bankFile ? bankFile.name + ' · ' + Math.round(bankFile.bytes.length / 1024) + ' KB' + (cached ? ' · 已缓存，下次自动载入' : '') : '未选择（从游戏 data 目录取，或下载对应 build 的基线包）'}</em>
+          <em>{bankFile ? bankFile.name + ' · ' + Math.round(bankFile.bytes.length / 1024) + ' KB' + (cached ? ' · 已缓存，下次自动载入' : '') : '未选择'}</em>
+          {!bankFile ? (
+            <span className="hint">
+              基线 bank = 当前游戏 build 的原始 Wwise 音效库（4.4 MB）。重建时以它为骨架，把 mod 的音频换进去，事件层级（HIRC）才能对上。
+              <button className="ghost" onClick={autoFetch} disabled={fetching > 0}>
+                {fetching > 0 ? '下载中 ' + fetching + '%' : '自动下载基线 bank（build ' + BASELINE.build + '）'}
+              </button>
+              {fetchErr ? <span className="err"> {fetchErr}</span> : null}
+              <span className="hint2">
+                文件在哪？两条路：<br />
+                ① 直接拖<b>任意一个已适配当前 build 的音频 mod</b>（zip 或 .patch_0）——它的 patch 里就装着完整 bank，本工具会自动从中提取；<br />
+                ② 若你有导出的 <code>bank-26088801.bin</code>（4.4 MB，来自游戏 data 的 Wwise 音效库），直接拖它。
+              </span>
+            </span>
+          ) : null}
         </label>
       </section>
 
