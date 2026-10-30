@@ -91,9 +91,25 @@ export default function App() {
   useEffect(function () {
     void (async function () {
       const got = await getBank();
-      if (!got) return;
-      setBankFile({ name: got.name, bytes: got.bytes });
-      setCached({ name: got.name, kb: Math.round(got.bytes.length / 1024) });
+      if (got) {
+        setBankFile({ name: got.name, bytes: got.bytes });
+        setCached({ name: got.name, kb: Math.round(got.bytes.length / 1024) });
+        return;
+      }
+      // built-in baseline: download once from the site itself, verify, then cache
+      try {
+        setFetching(1);
+        const got2 = await fetchBaseline(function (p) {
+          setFetching(p.total ? Math.round((p.loaded / p.total) * 100) : 1);
+        });
+        setBankFile({ name: 'bank-' + BASELINE.build + '.bin', bytes: got2.bytes });
+        setCached({ name: 'bank-' + BASELINE.build + '.bin', kb: Math.round(got2.bytes.length / 1024) });
+        await putBank('bank-' + BASELINE.build + '.bin', got2.bytes);
+      } catch (e) {
+        setFetchErr(String((e as Error).message || e));
+      } finally {
+        setFetching(0);
+      }
     })();
   }, []);
 
@@ -139,9 +155,9 @@ export default function App() {
         </label>
 
         <label className="drop">
-          <span>2. 基线 bank（当前 build 的原版音效库）—— 支持两种来源</span>
+          <span>2. 基线 bank（内置，自动载入；失败可手动拖入）</span>
           <input type="file" onChange={function (e) { const f = e.target.files && e.target.files[0]; if (f) onBank(f); }} />
-          <em>{bankFile ? bankFile.name + ' · ' + Math.round(bankFile.bytes.length / 1024) + ' KB' + (cached ? ' · 已缓存，下次自动载入' : '') : '未选择'}</em>
+          <em>{bankFile ? '已就绪 · ' + Math.round(bankFile.bytes.length / 1024) + ' KB' + (cached ? ' · 已缓存' : '') : '载入中…'}</em>
           {!bankFile ? (
             <span className="hint">
               基线 bank = 当前游戏 build 的原始 Wwise 音效库（4.4 MB）。重建时以它为骨架，把 mod 的音频换进去，事件层级（HIRC）才能对上。

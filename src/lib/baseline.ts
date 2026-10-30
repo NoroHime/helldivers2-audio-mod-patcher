@@ -3,8 +3,8 @@
 export const BASELINE = {
   build: '26088801',
   bytes: 4495534,
-  sha256: '',            // filled in when the asset is published
-  url: 'https://github.com/NoroHime/helldivers2-audio-mod-patcher/releases/download/bank-26088801/bank-26088801.bin',
+  sha256: 'df6babb4f64fce9fbaff04b2764db460a2c77b53e4b23e1cc9f7bdcbddbc8986',
+  url: new URL('baseline/bank-26088801.bin', document.baseURI).href,
 };
 
 export interface FetchProgress { loaded: number; total: number }
