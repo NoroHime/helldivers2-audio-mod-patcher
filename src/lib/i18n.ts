@@ -7,6 +7,7 @@ const zh: Dict = {
   'app.subtitle': '把过期的音频 mod 重建成当前 build 可用。文件不会上传，全部在本机浏览器内处理。',
   'app.tag': '目标 build：{build} ｜ 基线 bank 已内置（存本机 IndexedDB）',
   'app.lang': '语言',
+  'app.auto': '自动',
   'app.step1': '1. 拖入 mod（.zip 或 .patch_0）',
   'app.step2': '2. 基线 bank（内置，自动载入；失败可手动拖入）',
   'app.unselected': '未选择',
@@ -59,6 +60,7 @@ const en: Dict = {
   'app.subtitle': 'Rebuild an outdated audio mod for the current build. Nothing is uploaded; everything runs in your browser.',
   'app.tag': 'Target build: {build} ｜ baseline bank bundled (cached in local IndexedDB)',
   'app.lang': 'Language',
+  'app.auto': 'Auto',
   'app.step1': '1. Drop the mod (.zip or .patch_0)',
   'app.step2': '2. Baseline bank (bundled, auto-loaded; drop one if it fails)',
   'app.unselected': 'not selected',
@@ -108,12 +110,54 @@ const en: Dict = {
 
 const DICTS: Record<Lang, Dict> = { zh: zh, en: en };
 
+/** Normalise a locale tag: zh-Hant-TW, zh_TW, ZH-cn -> 'zh' | 'en' | '' */
+export function localeToLang(tag: string | undefined | null): Lang | '' {
+  if (!tag) return '';
+  const head = String(tag).trim().toLowerCase().replace(/_/g, '-').split('-')[0];
+  if (head === 'zh') return 'zh';
+  if (head === 'en') return 'en';
+  return '';
+}
+
+export interface LangEnv {
+  languages?: readonly string[];
+  language?: string;
+  saved?: string | null;
+  query?: string | null;
+}
+
+/**
+ * Decide the UI language. Order: ?lang= override -> remembered choice -> browser.
+ * Any Chinese locale (zh-CN, zh-TW, zh-HK, zh-Hant, zh_CN ...) maps to Chinese;
+ * everything else falls back to English.
+ */
+export function pickLang(env: LangEnv): Lang {
+  const fromQuery = localeToLang(env.query);
+  if (fromQuery) return fromQuery;
+  const saved = localeToLang(env.saved);
+  if (saved) return saved;
+  // only the primary language decides; a zh entry further down the list must not
+  // hijack an English/Japanese/French visitor.
+  const list = env.languages && env.languages.length ? env.languages : [];
+  const primary = env.language || list[0] || '';
+  const hit = localeToLang(primary);
+  if (hit) return hit;
+  if (!primary && list.length > 1) {
+    const second = localeToLang(list[1]);
+    if (second) return second;
+  }
+  return 'en';
+}
+
 export function detectLang(): Lang {
   try {
-    const saved = localStorage.getItem('hd2fixer.lang');
-    if (saved === 'zh' || saved === 'en') return saved;
-    const nav = (navigator.language || '').toLowerCase();
-    return nav.indexOf('zh') === 0 ? 'zh' : 'en';
+    const q = new URLSearchParams(location.search).get('lang');
+    return pickLang({
+      languages: navigator.languages,
+      language: navigator.language,
+      saved: localStorage.getItem('hd2fixer.lang'),
+      query: q,
+    });
   } catch (e) {
     return 'en';
   }

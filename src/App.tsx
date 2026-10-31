@@ -34,6 +34,7 @@ export default function App() {
   const [fetching, setFetching] = useState(0);
   const [fetchErr, setFetchErr] = useState('');
   const [lang, setLang] = useState<Lang>(function () { return detectLang(); });
+  const [manual, setManual] = useState<boolean>(function () { try { return !!localStorage.getItem('hd2fixer.lang'); } catch (e) { return false; } });
   const t = useCallback(function (key: string, params?: Record<string, string | number>) { return tr(lang, key, params); }, [lang]);
 
   useEffect(function () {
@@ -43,7 +44,14 @@ export default function App() {
 
   const switchLang = useCallback(function (next: Lang) {
     setLang(next);
+    setManual(true);
     saveLang(next);
+  }, []);
+
+  const useAuto = useCallback(function () {
+    setManual(false);
+    try { localStorage.removeItem('hd2fixer.lang'); } catch (e) { /* ignore */ }
+    setLang(detectLang());
   }, []);
 
   const onPatch = useCallback(async (f: File) => {
@@ -158,8 +166,9 @@ export default function App() {
         <div className="head">
           <h1>{t('app.title')}</h1>
           <div className="langs">
-            <button className={lang === 'zh' ? 'on' : ''} onClick={function () { switchLang('zh'); }}>中文</button>
-            <button className={lang === 'en' ? 'on' : ''} onClick={function () { switchLang('en'); }}>EN</button>
+            <button className={!manual ? 'on' : ''} onClick={useAuto} title="auto by browser">{t('app.auto')}</button>
+            <button className={manual && lang === 'zh' ? 'on' : ''} onClick={function () { switchLang('zh'); }}>中文</button>
+            <button className={manual && lang === 'en' ? 'on' : ''} onClick={function () { switchLang('en'); }}>EN</button>
           </div>
         </div>
         <p className="sub">{t('app.subtitle')}</p>

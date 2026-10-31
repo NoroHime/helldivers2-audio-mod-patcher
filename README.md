@@ -28,8 +28,8 @@
 
 ## Language / 语言
 
-The UI ships in **Chinese and English** and switches instantly (top-right toggle). The choice is stored in `localStorage` and the initial guess follows `navigator.language`.
-界面内置**中英双语**，右上角可即点即切；选择记在 `localStorage`，首屏语言跟随浏览器语言。
+The UI ships in **Chinese and English** and picks the language **automatically** from the browser: any Chinese locale (`zh-CN`, `zh-TW`, `zh-HK`, `zh-Hant`, `zh_CN`, …) gets Chinese, everything else gets English. A top-right control offers `Auto / 中文 / EN`; only an explicit pick is remembered in `localStorage`, and `?lang=en` (or `?lang=zh-CN`) overrides everything — handy for sharing a link.
+界面内置**中英双语**，并**自动**跟随浏览器语言：所有中文语系（`zh-CN`、`zh-TW`、`zh-HK`、`zh-Hant`、`zh_CN`…）→ 中文，其余一律英文。右上角可选 `自动 / 中文 / EN`；只有手动选过才会记进 `localStorage`，而 `?lang=en`（或 `?lang=zh-CN`）优先级最高，方便分享指定语言的链接。
 
 ## 基线 bank 从哪来
 
