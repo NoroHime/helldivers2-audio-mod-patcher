@@ -29,3 +29,8 @@ button.ghost { background:#2a2f24; color:#c8d0bd; font-weight:500; }
 .hint button { margin:8px 0; padding:6px 10px; font-size:12px; }
 .hint2 { display:block; color:#6f7766; font-size:11px; }
 .err { color:#f08080; }
+
+.head { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+.langs { display:flex; gap:6px; }
+.langs button { background:#1a1d16; color:#a9b0a0; border:1px solid #3a4033; padding:5px 10px; font-size:12px; font-weight:600; }
+.langs button.on { background:#c8e06a; color:#1a1d16; border-color:#c8e06a; }

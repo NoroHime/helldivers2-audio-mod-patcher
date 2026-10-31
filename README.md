@@ -26,6 +26,11 @@
 3. 拖入原版 bank。
 4. 点「开始修复」，下载产出的 zip，装进 mod 管理器。
 
+## Language / 语言
+
+The UI ships in **Chinese and English** and switches instantly (top-right toggle). The choice is stored in `localStorage` and the initial guess follows `navigator.language`.
+界面内置**中英双语**，右上角可即点即切；选择记在 `localStorage`，首屏语言跟随浏览器语言。
+
 ## 基线 bank 从哪来
 
 修复必须有一份**当前 build 的原版 Wwise 音效库**（约 4.4 MB）。它不是散落在 `data/` 里的独立文件，而是封在游戏的 `.dl_bin` 容器内。三条获取途径，按省事排序：

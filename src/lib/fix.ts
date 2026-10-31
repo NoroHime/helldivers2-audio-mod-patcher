@@ -4,7 +4,7 @@ import { parsePatch, buildPatch } from './patch';
 import { parseBank, describeBank } from './bank';
 import { rebuildBank, mediaMap } from './bankbuild';
 
-export interface Diag { level: 'ok' | 'warn' | 'err'; text: string }
+export interface Diag { level: 'ok' | 'warn' | 'err'; key: string; params?: Record<string, string | number> }
 export interface FixOutput { name: string; bytes: Uint8Array }
 export interface FixReport {
   logs: Diag[];
@@ -17,8 +17,8 @@ export interface FixReport {
   mediaMissing?: number;
 }
 
-function textLog(r: FixReport, level: Diag['level'], text: string) {
-  r.logs.push({ level, text });
+function textLog(r: FixReport, level: Diag['level'], key: string, params?: Record<string, string | number>) {
+  r.logs.push({ level, key, params });
 }
 
 export function looksLikeZip(bytes: Uint8Array): boolean {
@@ -50,22 +50,22 @@ export function fixPackage(patchBytes: Uint8Array, bankBytes: Uint8Array, patchN
   const report: FixReport = { logs: [], outputs: [] };
   try {
     const patch = parsePatch(patchBytes);
-    textLog(report, 'ok', 'patch: ' + patch.entries.length + ' entries, meta nonzero ' + patch.meta.filter(function (b) { return b !== 0; }).length + '/60');
+    textLog(report, 'ok', 'log.patch', { n: patch.entries.length, meta: patch.meta.filter(function (b) { return b !== 0; }).length });
 
     const baseline = parseBank(bankBytes);
     report.bankBefore = describeBank(baseline);
     report.mediaTotal = baseline.media.length;
-    if (!baseline.hirc) textLog(report, 'warn', 'baseline bank has no HIRC - the result may not trigger any event');
+    if (!baseline.hirc) textLog(report, 'warn', 'log.noHirc');
 
     // locate the bank entry inside the patch
     let bankEntry = -1;
     for (let i = 0; i < patch.entries.length; i++) {
       if (looksLikeBank(patch.entries[i].data) && patch.entries[i].data.length > 100000) { bankEntry = i; break; }
     }
-    if (bankEntry < 0) throw new Error('这个 patch 里没有 Wwise bank（可能只改 .stream 流式音频或文本），本工具修不了这种包');
+    if (bankEntry < 0) throw new Error('__err.noBank');
     const modRaw = patch.entries[bankEntry].data;
     const modBank = parseBank(modRaw);
-    textLog(report, 'ok', 'mod bank: ' + describeBank(modBank) + ' / ' + modBank.media.length + ' media');
+    textLog(report, 'ok', 'log.modBank', { chunks: describeBank(modBank), n: modBank.media.length });
 
     const baseMedia = mediaMap(baseline);
     const modMedia = mediaMap(modBank);
@@ -76,14 +76,14 @@ export function fixPackage(patchBytes: Uint8Array, bankBytes: Uint8Array, patchN
       if (baseMedia.has(pair[0])) replace.set(pair[0], pair[1]);
       else skipped.push(pair[0]);
     }
-    textLog(report, 'ok', 'media matched: ' + replace.size + ' / skipped (not in baseline): ' + skipped.length);
+    textLog(report, 'ok', 'log.mediaMatched', { matched: replace.size, skipped: skipped.length });
 
-    if (replace.size === 0) throw new Error('这个 patch 的媒体 id 与基线 bank 一个都对不上 —— 要么基线 bank 不是同一个 build，要么这不是音频媒体包');
+    if (replace.size === 0) throw new Error('__err.noMatch');
     const rebuilt = rebuildBank(baseline, replace, align);
     report.mediaReplaced = rebuilt.replaced.length;
     report.mediaMissing = rebuilt.missing.length;
     report.bankAfter = describeBank(parseBank(rebuilt.bytes));
-    textLog(report, 'ok', 'DATA ' + rebuilt.dataBefore + ' -> ' + rebuilt.dataAfter + ' bytes');
+    textLog(report, 'ok', 'log.dataSize', { before: rebuilt.dataBefore, after: rebuilt.dataAfter });
 
     const outPatch = patch.entries.slice();
     outPatch[bankEntry] = {
@@ -94,7 +94,7 @@ export function fixPackage(patchBytes: Uint8Array, bankBytes: Uint8Array, patchN
       idx: outPatch[bankEntry].idx, data: rebuilt.bytes,
     };
     const built = buildPatch({ meta: patch.meta, types: patch.types, entries: outPatch });
-    textLog(report, 'ok', 'output patch: ' + built.length + ' bytes');
+    textLog(report, 'ok', 'log.outputPatch', { n: built.length });
 
     const files: Record<string, Uint8Array> = {};
     if (manifest) files['manifest.json'] = manifest;
@@ -103,10 +103,11 @@ export function fixPackage(patchBytes: Uint8Array, bankBytes: Uint8Array, patchN
     report.patchName = patchName;
     const outName = (patchName.replace(/\.patch_?0?$/, '') || 'patch') + '.fixed.zip';
     report.outputs.push({ name: outName, bytes: zipped });
-    textLog(report, 'ok', 'zip: ' + zipped.length + ' bytes (level 9)');
+    textLog(report, 'ok', 'log.zip', { n: zipped.length });
     return { report, outputs: report.outputs };
   } catch (e) {
-    textLog(report, 'err', String((e as Error).message || e));
+    const m = String((e as Error).message || e);
+    textLog(report, 'err', m.indexOf('__') === 0 ? m : 'log.raw', m.indexOf('__') === 0 ? undefined : { msg: m });
     return { report, outputs: [] };
   }
 }
@@ -119,7 +120,7 @@ export function extractBankBytes(patchBytes: Uint8Array): Uint8Array | null {
   return null;
 }
 
-export function extractFromZip(bytes: Uint8Array): { patch?: { name: string; bytes: Uint8Array }; manifest?: Uint8Array; error?: string } {
+export function extractFromZip(bytes: Uint8Array): { patch?: { name: string; bytes: Uint8Array }; manifest?: Uint8Array; errorKey?: string; errorMsg?: string } {
   try {
     const files = unzipSync(bytes);
     let patch;
@@ -129,9 +130,9 @@ export function extractFromZip(bytes: Uint8Array): { patch?: { name: string; byt
       if (lower.endsWith('.patch_0') || lower.endsWith('.patch')) patch = { name, bytes: files[name] };
       if (lower.endsWith('manifest.json')) manifest = files[name];
     }
-    if (!patch) return { error: 'zip 里没有 .patch / .patch_0' };
+    if (!patch) return { errorKey: 'err.zipNoPatch' };
     return { patch, manifest };
   } catch (e) {
-    return { error: 'zip 解包失败: ' + String(e) };
+    return { errorKey: 'err.zipBroken', errorMsg: String(e) };
   }
 }

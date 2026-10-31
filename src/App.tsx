@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { fixPackage, extractFromZip, extractBankBytes, looksLikeZip, looksLikePatch, looksLikeBank, type FixReport } from './lib/fix';
 import { putBank, getBank, clearBank } from './lib/storage';
 import { BASELINE, fetchBaseline } from './lib/baseline';
+import { detectLang, saveLang, t as tr, type Lang } from './lib/i18n';
 
 type Out = { name: string; bytes: Uint8Array };
 
@@ -32,21 +33,33 @@ export default function App() {
   const [cached, setCached] = useState<{ name: string; kb: number } | null>(null);
   const [fetching, setFetching] = useState(0);
   const [fetchErr, setFetchErr] = useState('');
+  const [lang, setLang] = useState<Lang>(function () { return detectLang(); });
+  const t = useCallback(function (key: string, params?: Record<string, string | number>) { return tr(lang, key, params); }, [lang]);
+
+  useEffect(function () {
+    document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
+    document.title = tr(lang, 'app.title');
+  }, [lang]);
+
+  const switchLang = useCallback(function (next: Lang) {
+    setLang(next);
+    saveLang(next);
+  }, []);
 
   const onPatch = useCallback(async (f: File) => {
     const bytes = await readFile(f);
     if (looksLikeZip(bytes)) {
       const got = extractFromZip(bytes);
-      if (got.error || !got.patch) { setReport({ logs: [{ level: 'err', text: got.error || 'no patch inside' }], outputs: [] }); return; }
+      if (got.errorKey || !got.patch) { setReport({ logs: [{ level: 'err', key: got.errorKey || 'err.zipNoPatch', params: got.errorMsg ? { msg: got.errorMsg } : undefined }], outputs: [] }); return; }
       setPatchFile(got.patch);
       setManifest(got.manifest || null);
-      setReport({ logs: [{ level: 'ok', text: 'zip 解包成功：' + got.patch.name }], outputs: [] });
+      setReport({ logs: [{ level: 'ok', key: 'log.zipOk', params: { name: got.patch.name } }], outputs: [] });
     } else if (looksLikePatch(bytes)) {
       setPatchFile({ name: f.name, bytes });
       setManifest(null);
-      setReport({ logs: [{ level: 'ok', text: '直接读取 patch：' + f.name }], outputs: [] });
+      setReport({ logs: [{ level: 'ok', key: 'log.patchOk', params: { name: f.name } }], outputs: [] });
     } else {
-      setReport({ logs: [{ level: 'err', text: '拖入的不是 zip 也不是 patch' }], outputs: [] });
+      setReport({ logs: [{ level: 'err', key: 'err.notZipPatch' }], outputs: [] });
     }
     setOutputs([]);
   }, []);
@@ -64,16 +77,16 @@ export default function App() {
         } else if (looksLikePatch(bytes)) patchBytes = bytes;
         if (patchBytes) {
           const bank = extractBankBytes(patchBytes);
-          if (bank) { bytes = bank; fromPkg = '（从 ' + f.name + ' 里的 bank 条目提取）'; }
+          if (bank) { bytes = bank; fromPkg = f.name; }
         }
       } catch (e) { /* fall through to the error below */ }
     }
-    if (!looksLikeBank(bytes)) { setReport({ logs: [{ level: 'err', text: '这个文件里没有 BKHD：既不是 bank，也不是含 bank 的音频 mod' }], outputs: [] }); return; }
+    if (!looksLikeBank(bytes)) { setReport({ logs: [{ level: 'err', key: 'err.notBank' }], outputs: [] }); return; }
     setBankFile({ name: f.name, bytes });
     setCached({ name: f.name, kb: Math.round(bytes.length / 1024) });
     void putBank(f.name, bytes);
-    const logs: any[] = [{ level: 'ok', text: '基线 bank 已载入并缓存：' + Math.round(bytes.length / 1024) + ' KB ' + fromPkg }];
-    if (fromPkg) logs.push({ level: 'warn', text: '注意：这个基线来自另一个 mod，它的音频也会一并带进结果。要纯净基线请用原版 bank。' });
+    const logs: any[] = [{ level: 'ok', key: 'log.bankLoaded', params: { kb: Math.round(bytes.length / 1024), extra: fromPkg ? t('log.bankFromPkg', { name: fromPkg }) : '' } }];
+    if (fromPkg) logs.push({ level: 'warn', key: 'warn.bankFromPkg' });
     setReport({ logs, outputs: [] });
   }, []);
 
@@ -123,7 +136,7 @@ export default function App() {
       setBankFile({ name: 'bank-' + BASELINE.build + '.bin', bytes: got.bytes });
       setCached({ name: 'bank-' + BASELINE.build + '.bin', kb: Math.round(got.bytes.length / 1024) });
       await putBank('bank-' + BASELINE.build + '.bin', got.bytes);
-      setReport({ logs: [{ level: 'ok', text: '已自动下载基线 bank（' + Math.round(got.bytes.length / 1024) + ' KB，sha256 ' + got.sha.slice(0, 12) + '）' }], outputs: [] });
+      setReport({ logs: [{ level: 'ok', key: 'log.bankFetched', params: { kb: Math.round(got.bytes.length / 1024), sha: got.sha.slice(0, 12) } }], outputs: [] });
     } catch (e) {
       setFetchErr(String((e as Error).message || e));
     } finally {
@@ -142,67 +155,73 @@ export default function App() {
   return (
     <main className="wrap">
       <header>
-        <h1>HD2 音频 Patch 修复器</h1>
-        <p className="sub">把过期的音频 mod 重建成当前 build 可用。文件不会上传，全部在本机浏览器内处理。</p>
-        <p className="tag">目标 build：26088801 ｜ 基线 bank 只需导入一次（存本机 IndexedDB）</p>
+        <div className="head">
+          <h1>{t('app.title')}</h1>
+          <div className="langs">
+            <button className={lang === 'zh' ? 'on' : ''} onClick={function () { switchLang('zh'); }}>中文</button>
+            <button className={lang === 'en' ? 'on' : ''} onClick={function () { switchLang('en'); }}>EN</button>
+          </div>
+        </div>
+        <p className="sub">{t('app.subtitle')}</p>
+        <p className="tag">{t('app.tag', { build: BASELINE.build })}</p>
       </header>
 
       <section className="grid">
         <label className="drop">
-          <span>1. 拖入 mod（.zip 或 .patch_0）</span>
+          <span>{t('app.step1')}</span>
           <input type="file" accept=".zip,.patch,.patch_0" onChange={function (e) { const f = e.target.files && e.target.files[0]; if (f) onPatch(f); }} />
-          <em>{patchFile ? patchFile.name + ' · ' + Math.round(patchFile.bytes.length / 1024) + ' KB' : '未选择'}</em>
+          <em>{patchFile ? patchFile.name + ' · ' + Math.round(patchFile.bytes.length / 1024) + ' KB' : t('app.unselected')}</em>
         </label>
 
         <label className="drop">
-          <span>2. 基线 bank（内置，自动载入；失败可手动拖入）</span>
+          <span>{t('app.step2')}</span>
           <input type="file" onChange={function (e) { const f = e.target.files && e.target.files[0]; if (f) onBank(f); }} />
-          <em>{bankFile ? '已就绪 · ' + Math.round(bankFile.bytes.length / 1024) + ' KB' + (cached ? ' · 已缓存' : '') : '载入中…'}</em>
+          <em>{bankFile ? t('app.ready') + ' · ' + Math.round(bankFile.bytes.length / 1024) + ' KB' + (cached ? ' · ' + t('app.cached') : '') : t('app.loading')}</em>
           {!bankFile ? (
             <span className="hint">
-              基线 bank = 当前游戏 build 的原始 Wwise 音效库（4.4 MB）。重建时以它为骨架，把 mod 的音频换进去，事件层级（HIRC）才能对上。
+              <span>{t('app.baselineHint')}</span>
               <button className="ghost" onClick={autoFetch} disabled={fetching > 0}>
-                {fetching > 0 ? '下载中 ' + fetching + '%' : '自动下载基线 bank（build ' + BASELINE.build + '）'}
+                {fetching > 0 ? t('app.fetching', { pct: fetching }) : t('app.fetchBtn')}
               </button>
               {fetchErr ? <span className="err"> {fetchErr}</span> : null}
               <span className="hint2">
-                文件在哪？两条路：<br />
-                ① 直接拖<b>任意一个已适配当前 build 的音频 mod</b>（zip 或 .patch_0）——它的 patch 里就装着完整 bank，本工具会自动从中提取；<br />
-                ② 若你有导出的 <code>bank-26088801.bin</code>（4.4 MB，来自游戏 data 的 Wwise 音效库），直接拖它。
+                {t('app.whereTitle')}<br />
+                {t('app.wherePath1')}<br />
+                {t('app.wherePath2', { build: BASELINE.build })}
               </span>
-            </span>
+              </span>
           ) : null}
         </label>
       </section>
 
       <section className="bar">
-        <label>媒体对齐 <select value={align} onChange={function (e) { setAlign(Number(e.target.value)); }}>
-          <option value={16}>16 字节（推荐）</option>
-          <option value={4}>4 字节</option>
-          <option value={1}>无对齐</option>
+        <label>{t('app.align')} <select value={align} onChange={function (e) { setAlign(Number(e.target.value)); }}>
+          <option value={16}>{t('app.align16')}</option>
+          <option value={4}>{t('app.align4')}</option>
+          <option value={1}>{t('app.align1')}</option>
         </select></label>
-        <button onClick={run} disabled={!patchFile || !bankFile || busy}>{busy ? '处理中…' : '开始修复'}</button>
-        {cached ? <button className="ghost" onClick={forget}>清除缓存的基线 bank</button> : null}
+        <button onClick={run} disabled={!patchFile || !bankFile || busy}>{busy ? t('app.running') : t('app.run')}</button>
+        {cached ? <button className="ghost" onClick={forget}>{t('app.clearCache')}</button> : null}
         {outputs.map(function (o) {
-          return <button key={o.name} className="dl" onClick={function () { download(o.name, o.bytes); }}>下载 {o.name}</button>;
+          return <button key={o.name} className="dl" onClick={function () { download(o.name, o.bytes); }}>{t('app.download', { name: o.name })}</button>;
         })}
       </section>
 
       <section className="log">
-        <h2>处理日志</h2>
-        {logs.length === 0 ? <p className="dim">还没有开始。</p> : null}
+        <h2>{t('app.logs')}</h2>
+        {logs.length === 0 ? <p className="dim">{t('app.noLogs')}</p> : null}
         <ul>
           {logs.map(function (l, i) {
-            return <li key={i} className={l.level}>{l.level === 'ok' ? '✓' : l.level === 'warn' ? '!' : '✗'} {l.text}</li>;
+            return <li key={i} className={l.level}>{l.level === 'ok' ? '✓' : l.level === 'warn' ? '!' : '✗'} {t(l.key, l.params)}</li>;
           })}
         </ul>
         {report && report.patchName ? (
-          <p className="dim">patch 名：{report.patchName}｜媒体 {report.mediaTotal} 个，替换 {report.mediaReplaced} 个</p>
+          <p className="dim">{t('app.summary', { name: String(report.patchName), total: String(report.mediaTotal), replaced: String(report.mediaReplaced) })}</p>
         ) : null}
       </section>
 
       <footer>
-        <p>做法：保留原 bank 的 BKHD / HIRC（事件层级），只替换 DIDX/DATA 里的媒体，并重算资源头长度。不要用「重写整个 bank」的做法。</p>
+        <p>{t('app.footer')}</p>
       </footer>
     </main>
   );
